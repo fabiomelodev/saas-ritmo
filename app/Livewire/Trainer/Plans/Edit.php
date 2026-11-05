@@ -9,6 +9,7 @@ use App\Models\Plan;
 use App\Models\PlanSession;
 use App\Models\PlanWeek;
 use App\Notifications\PlanPublished;
+use Carbon\CarbonImmutable;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -32,6 +33,9 @@ class Edit extends Component
     public ?int $selectedId = null;
 
     public string $planTitle = '';
+
+    /** Data de início (editável só em rascunho) */
+    public string $startsOn = '';
 
     /** @var array<int, mixed> metas por id da semana */
     public array $goals = [];
@@ -60,6 +64,7 @@ class Edit extends Component
 
         $this->planId = $plan->id;
         $this->planTitle = $plan->title;
+        $this->startsOn = $plan->starts_on->toDateString();
         $this->goals = $plan->weeks->mapWithKeys(fn (PlanWeek $w) => [$w->id => $w->goal_km])->all();
 
         // Abre no primeiro dia de treino
@@ -206,6 +211,60 @@ class Edit extends Component
         $this->validateOnly('planTitle', ['planTitle' => ['required', 'string', 'max:80']]);
         $this->plan->update(['title' => $this->planTitle]);
         unset($this->plan);
+    }
+
+    /**
+     * Muda o início do plano (só em rascunho). A data vira a segunda-feira da semana escolhida;
+     * as sessões acompanham, porque as datas são calculadas a partir do início.
+     */
+    public function changeStartDate(): void
+    {
+        $plan = $this->plan;
+        abort_if($plan->status === PlanStatus::Published, 403, 'Volte o plano para rascunho para mudar o início.');
+
+        $this->validate(['startsOn' => ['required', 'date']], [], ['startsOn' => 'início']);
+
+        if ($plan->hasLogs()) {
+            $this->addError('startsOn', 'O aluno já registrou treinos deste plano; mudar o início desalinharia os registros.');
+
+            return;
+        }
+
+        $monday = CarbonImmutable::parse($this->startsOn)->startOfWeek(CarbonImmutable::MONDAY);
+        $weeks = $plan->weeks->count();
+
+        $attributes = ['starts_on' => $monday->toDateString()];
+
+        // Título ainda no padrão sugerido? Acompanha as novas datas.
+        if ($plan->title === Plan::suggestedTitle($plan->starts_on, $weeks)) {
+            $attributes['title'] = $this->planTitle = Plan::suggestedTitle($monday, $weeks);
+        }
+
+        $plan->update($attributes);
+        $this->startsOn = $monday->toDateString();
+
+        unset($this->plan, $this->selected);
+        session()->now('saved', 'Início alterado para segunda, '.$monday->format('d/m').'.');
+        $this->dispatch('start-date-changed');
+    }
+
+    /** Exclui o plano (só rascunho e sem treinos registrados pelo aluno) */
+    public function deletePlan(): void
+    {
+        $plan = $this->plan;
+        abort_if($plan->status === PlanStatus::Published, 403, 'Volte o plano para rascunho antes de excluir.');
+
+        if ($plan->hasLogs()) {
+            session()->now('error', 'Este plano tem treinos registrados pelo aluno. Para não apagar esse histórico, ele não pode ser excluído.');
+
+            return;
+        }
+
+        $title = $plan->title;
+        $plan->delete(); // semanas e sessões saem em cascata
+
+        session()->flash('saved', 'Plano “'.$title.'” excluído.');
+        $this->redirectRoute('trainer.plans.index', navigate: true);
     }
 
     public function publish(): void

@@ -3,6 +3,8 @@
         <a href="{{ route('trainer.plans.create') }}" wire:navigate class="btn-red">+ Novo plano</a>
     </x-page-header>
 
+    <x-flash />
+
     <div class="flex flex-col gap-2.5">
         @forelse ($this->plans as $plan)
             @php

@@ -141,9 +141,7 @@ class Create extends Component
     {
         $monday = $this->firstMonday;
 
-        return $monday
-            ? 'Plano '.WeekRange::period($monday, $monday->addDays(CreatePlan::WEEKS * 7 - 1))
-            : 'Novo plano';
+        return $monday ? Plan::suggestedTitle($monday, CreatePlan::WEEKS) : 'Novo plano';
     }
 
     /** Metas finais, com o aumento percentual opcional */

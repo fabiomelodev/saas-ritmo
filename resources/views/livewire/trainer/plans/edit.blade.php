@@ -14,7 +14,22 @@
                 <x-icon name="back" class="size-5" stroke-width="2.5" />
             </a>
             <div class="flex flex-col gap-1.5">
-                <span class="text-[13px] text-muted">{{ $plan->student->name }} · {{ $plan->periodLabel() }}</span>
+                <div x-data="{ editing: @js($errors->has('startsOn')) }" x-on:start-date-changed.window="editing = false"
+                     class="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] text-muted">
+                    <span>{{ $plan->student->name }} · {{ $plan->periodLabel() }}</span>
+                    @unless ($published)
+                        <button type="button" x-show="! editing" x-on:click="editing = true; $nextTick(() => $refs.start.focus())"
+                                class="font-semibold text-brand-dark underline-offset-2 hover:underline">Alterar início</button>
+                        <form x-show="editing" x-cloak wire:submit="changeStartDate" class="flex flex-wrap items-center gap-2">
+                            <label for="startsOn" class="sr-only">Nova data de início</label>
+                            <input id="startsOn" x-ref="start" type="date" wire:model="startsOn" class="input h-9 w-auto py-0 text-[13px]">
+                            <button type="submit" class="btn-dark h-9 px-3 text-[13px]" wire:loading.attr="disabled">Salvar</button>
+                            <button type="button" x-on:click="editing = false" class="text-[13px] font-semibold text-neutral-700">Cancelar</button>
+                            <span class="w-full text-xs text-muted">O plano sempre começa na segunda da semana escolhida.</span>
+                        </form>
+                    @endunless
+                    @error('startsOn') <span class="field-error w-full">{{ $message }}</span> @enderror
+                </div>
                 <label for="planTitle" class="sr-only">Título do plano</label>
                 <input id="planTitle" wire:model="planTitle" wire:blur="saveTitle"
                        class="display w-full max-w-md bg-transparent text-[34px] outline-none focus:rounded-lg focus:bg-white md:text-[40px]">
@@ -31,6 +46,9 @@
             @if ($published)
                 <button type="button" wire:click="unpublish" class="btn-outline">Voltar para rascunho</button>
             @else
+                <button type="button" wire:click="deletePlan"
+                        wire:confirm="Excluir o plano “{{ $plan->title }}”? As 4 semanas de treinos serão apagadas e não dá para desfazer."
+                        class="btn-outline text-brand-dark">Excluir</button>
                 <button type="button" wire:click="publish" wire:confirm="Publicar o plano para {{ $plan->student->first_name }}?" class="btn-red">Publicar</button>
             @endif
         </div>

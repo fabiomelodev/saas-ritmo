@@ -69,6 +69,18 @@ class Plan extends Model
         return $this->starts_on->copy()->addDays($weeks * 7 - 1);
     }
 
+    /** Título sugerido para um plano que começa nessa segunda: "Plano 09/11 a 06/12" */
+    public static function suggestedTitle(\Carbon\CarbonInterface $monday, int $weeks = 4): string
+    {
+        return 'Plano '.\App\Support\WeekRange::period($monday, $monday->copy()->addDays($weeks * 7 - 1));
+    }
+
+    /** O aluno já registrou algum treino deste plano? (não dá para mover datas nem excluir sem perder histórico) */
+    public function hasLogs(): bool
+    {
+        return $this->sessions()->whereHas('log')->exists();
+    }
+
     /** "09/11 a 06/12" */
     public function periodLabel(): string
     {

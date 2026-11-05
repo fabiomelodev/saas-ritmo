@@ -206,6 +206,73 @@ class TrainerPlanningTest extends TestCase
         $this->actingAs($this->trainer)->get(route('trainer.sheets.edit', $foreignSheet))->assertForbidden();
     }
 
+    public function test_draft_start_date_can_change_and_follows_default_title(): void
+    {
+        $plan = app(\App\Actions\CreatePlan::class)->handle(
+            $this->trainer, $this->student, Plan::suggestedTitle(\Carbon\Carbon::parse('2026-11-09')),
+            \Carbon\Carbon::parse('2026-11-09'), null, [],
+        );
+
+        Livewire::test(PlanEdit::class, ['plan' => $plan])
+            ->set('startsOn', '2026-11-18') // quarta-feira
+            ->call('changeStartDate')
+            ->assertHasNoErrors()
+            ->assertSet('startsOn', '2026-11-16')
+            ->assertSet('planTitle', 'Plano 16/11 a 13/12');
+
+        $plan->refresh();
+        $this->assertSame('2026-11-16', $plan->starts_on->toDateString());
+        $this->assertSame('2026-11-16', $plan->weeks()->first()->sessions()->first()->date()->toDateString());
+
+        // Título escrito pelo treinador fica como está
+        $plan->update(['title' => 'Ciclo de base']);
+        Livewire::test(PlanEdit::class, ['plan' => $plan])->set('startsOn', '2026-11-23')->call('changeStartDate');
+        $this->assertSame('Ciclo de base', $plan->fresh()->title);
+    }
+
+    public function test_published_plan_cannot_change_start_or_be_deleted(): void
+    {
+        $plan = $this->seedPreviousPlan();
+        $plan->publish();
+
+        Livewire::test(PlanEdit::class, ['plan' => $plan])
+            ->set('startsOn', '2026-12-07')
+            ->call('changeStartDate')
+            ->assertForbidden();
+
+        Livewire::test(PlanEdit::class, ['plan' => $plan])->call('deletePlan')->assertForbidden();
+
+        $this->assertModelExists($plan);
+    }
+
+    public function test_delete_draft_plan(): void
+    {
+        $plan = $this->seedPreviousPlan();
+
+        Livewire::test(PlanEdit::class, ['plan' => $plan])
+            ->call('deletePlan')
+            ->assertRedirect(route('trainer.plans.index'));
+
+        $this->assertModelMissing($plan);
+        $this->assertDatabaseCount('plan_sessions', 0);
+    }
+
+    public function test_draft_with_student_logs_is_protected(): void
+    {
+        $plan = $this->seedPreviousPlan();
+        $session = $plan->weeks[0]->sessions->firstWhere('day_of_week', 6);
+        $session->log()->create(['student_id' => $this->student->id, 'status' => 'done', 'completed_at' => now()]);
+
+        Livewire::test(PlanEdit::class, ['plan' => $plan])
+            ->call('deletePlan')
+            ->assertNoRedirect()
+            ->set('startsOn', '2026-12-07')
+            ->call('changeStartDate')
+            ->assertHasErrors('startsOn');
+
+        $this->assertModelExists($plan);
+    }
+
     private function seedPreviousPlan(): Plan
     {
         $plan = app(\App\Actions\CreatePlan::class)->handle(
